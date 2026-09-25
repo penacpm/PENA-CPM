@@ -349,29 +349,33 @@ function renderPichichi(){
   html += `</div></div>`;
   html += `<p class="muted" style="font-size:11px;margin:8px 0 0;">Criterios de desempate: Goles → GxP → Alfabético</p>`;
 
-  html += `<p class="muted" style="font-size:12px;margin:16px 0 8px;">Goles por jornada</p>
+  html += `<p class="muted" style="font-size:12px;margin:16px 0 8px;">Evolución de goles</p>
     <div class="card"><canvas id="graf-goles-jornada" height="180"></canvas></div>`;
 
   el.innerHTML = html;
-  dibujarGraficaGolesJornada();
+  const top5goleadores = [...jugadoresConPartidos()].sort((a,b)=>b.gf-a.gf).slice(0,5);
+  dibujarGraficaGolesJornada(top5goleadores);
 }
 window.renderPichichi = renderPichichi;
 
 let chartGolesJornadaInstancia = null;
-function dibujarGraficaGolesJornada(){
+function dibujarGraficaGolesJornada(top){
   const canvas = document.getElementById('graf-goles-jornada');
   if (!canvas || typeof Chart === 'undefined') return;
-  const jugadas = CALENDARIO.filter(c => window.JORNADAS_DB[c.numero] && window.JORNADAS_DB[c.numero].jugado);
-  const labels = jugadas.map(c=>'J.'+c.numero);
-  const data = jugadas.map(c=>{
-    const m = calcularMarcador(window.JORNADAS_DB[c.numero]);
-    return m.golesBlanco + m.golesNegro;
+  const colores = ['#2a78d6','#eb6834','#1baf7a','#a855c9','#c73737'];
+  const labels = CALENDARIO.map(c=>'J.'+c.numero);
+  const datasets = top.map((s,i)=>{
+    let acumulado = 0;
+    const data = s.hist.map(h=>{
+      if (h.jugado){ acumulado += h.goles; }
+      return h.jugado ? acumulado : null;
+    });
+    return {label:s.nombre, data, borderColor:colores[i%colores.length], backgroundColor:colores[i%colores.length], borderWidth:2, pointRadius:2, tension:0.25, spanGaps:true};
   });
   if (chartGolesJornadaInstancia) chartGolesJornadaInstancia.destroy();
   chartGolesJornadaInstancia = new Chart(canvas, {
-    type:'bar',
-    data:{labels, datasets:[{label:'Goles totales del partido', data, backgroundColor:'#2a78d6'}]},
-    options:{responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, ticks:{stepSize:1}}}}
+    type:'line', data:{labels, datasets},
+    options:{responsive:true, plugins:{legend:{display:true, labels:{boxWidth:10}}}, scales:{y:{beginAtZero:true}}}
   });
 }
 
