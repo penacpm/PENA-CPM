@@ -409,9 +409,52 @@ function renderRachas(){
     });
   });
   html += `</div>`;
+
+  const {juntos, contra} = calcularParejas();
+  const maxJuntos = maxDePareja(juntos);
+  const maxContra = maxDePareja(contra);
+  const estiloAmarillo = 'background:#fef9c3;color:#111;';
+  html += `<div class="grid-2" style="margin-top:10px;">
+    <div style="${estiloAmarillo}border-radius:12px;padding:0.9rem;">
+      <p style="font-size:11px;margin:0 0 10px;">🤝 Más veces juntos</p>
+      ${maxJuntos.pares.length ? maxJuntos.pares.map(p=>`<p style="margin:2px 0;font-size:13px;">${p[0]} &amp; ${p[1]}</p>`).join('') : '<p style="margin:0;font-size:13px;">-</p>'}
+      <p style="font-size:22px;font-weight:500;margin:8px 0 0;">${maxJuntos.valor}</p>
+    </div>
+    <div style="${estiloAmarillo}border-radius:12px;padding:0.9rem;">
+      <p style="font-size:11px;margin:0 0 10px;">⚔️ Más enfrentamientos</p>
+      ${maxContra.pares.length ? maxContra.pares.map(p=>`<p style="margin:2px 0;font-size:13px;">${p[0]} &amp; ${p[1]}</p>`).join('') : '<p style="margin:0;font-size:13px;">-</p>'}
+      <p style="font-size:22px;font-weight:500;margin:8px 0 0;">${maxContra.valor}</p>
+    </div>
+  </div>`;
+
   el.innerHTML = html;
 }
 window.renderRachas = renderRachas;
+
+function calcularParejas(){
+  const juntos = {}, contra = {};
+  const combos = (arr) => { const out=[]; for(let i=0;i<arr.length;i++) for(let k=i+1;k<arr.length;k++) out.push([arr[i],arr[k]]); return out; };
+  CALENDARIO.forEach(c=>{
+    const jd = window.JORNADAS_DB[c.numero]; if (!jd || !jd.jugado) return;
+    const blanco = (jd.blanco||[]).map(j=>j.nombre);
+    const negro = (jd.negro||[]).map(j=>j.nombre);
+    combos(blanco).concat(combos(negro)).forEach(([a,b])=>{
+      const key = [a,b].sort().join('|'); juntos[key] = (juntos[key]||0)+1;
+    });
+    blanco.forEach(a=>{ negro.forEach(b=>{
+      const key = [a,b].sort().join('|'); contra[key] = (contra[key]||0)+1;
+    });});
+  });
+  return {juntos, contra};
+}
+function maxDePareja(obj){
+  let valor = 0, pares = [];
+  Object.entries(obj).forEach(([key,v])=>{
+    if (v > valor){ valor = v; pares = [key.split('|')]; }
+    else if (v === valor && v > 0){ pares.push(key.split('|')); }
+  });
+  return {valor, pares};
+}
 
 /* ============================================================
    RENDER: FICHA JUGADOR
@@ -694,7 +737,7 @@ function renderPrivado(){
   const subs = [
     ['anadir','Añadir resultado'], ['modificar','Modificar resultado'], ['contab','Contabilidad'],
     ['addjug','Añadir jugadores'], ['modjug','Modificar jugadores'], ['sorteo','Sortear'],
-    ['historico','Histórico'], ['exportar','Exportar']
+    ['historico','Histórico'], ['resumen','Resumen'], ['exportar','Exportar']
   ];
   let html = `<div class="sub-nav">${subs.map(([id,label])=>
     `<button class="sub-nav-btn ${window.privadoSub===id?'active':''}" onclick="window.privadoSub='${id}'; renderPrivado();">${label}</button>`
@@ -703,7 +746,7 @@ function renderPrivado(){
   <div id="priv-content"></div>`;
   el.innerHTML = html;
   const map = {anadir:privadoAnadirResultado, modificar:privadoModificarResultado, contab:privadoContabilidad,
-    addjug:privadoAddJugador, modjug:privadoModJugador, sorteo:privadoSorteo, historico:privadoHistorico, exportar:privadoExportar};
+    addjug:privadoAddJugador, modjug:privadoModJugador, sorteo:privadoSorteo, historico:privadoHistorico, resumen:privadoResumen, exportar:privadoExportar};
   document.getElementById('priv-content').innerHTML = map[window.privadoSub]();
   if (window.privadoSub==='modificar') cargarSelectorJornadaModificar();
 }
@@ -1091,6 +1134,95 @@ async function borrarHistorico(temporada){
   catch (err) { alert('❌ Error al borrar: ' + (err && err.message ? err.message : err)); console.error(err); }
 }
 window.borrarHistorico = borrarHistorico;
+
+const MIN_PARTIDOS_PV_RESUMEN = 5;
+
+function calcularExtremosPartidos(){
+  const jugadas = CALENDARIO.filter(c => window.JORNADAS_DB[c.numero] && window.JORNADAS_DB[c.numero].jugado);
+  let maxGoles=-1, maxGolesInfo=[], minGoles=Infinity, minGolesInfo=[], maxDif=-1, maxDifInfo=[];
+  jugadas.forEach(c=>{
+    const jd = window.JORNADAS_DB[c.numero];
+    const m = calcularMarcador(jd);
+    const total = m.golesBlanco + m.golesNegro;
+    const dif = Math.abs(m.golesBlanco - m.golesNegro);
+    const info = {numero:c.numero, fecha:c.fecha, m};
+    if (total > maxGoles){ maxGoles = total; maxGolesInfo = [info]; } else if (total === maxGoles) maxGolesInfo.push(info);
+    if (total < minGoles){ minGoles = total; minGolesInfo = [info]; } else if (total === minGoles) minGolesInfo.push(info);
+    if (dif > maxDif){ maxDif = dif; maxDifInfo = [info]; } else if (dif === maxDif) maxDifInfo.push(info);
+  });
+  return {maxGoles, maxGolesInfo, minGoles, minGolesInfo, maxDif, maxDifInfo};
+}
+
+function calcularMaxGolesIndividual(){
+  let max = 0, lista = [];
+  CALENDARIO.forEach(c=>{
+    const jd = window.JORNADAS_DB[c.numero]; if (!jd || !jd.jugado) return;
+    [...(jd.blanco||[]), ...(jd.negro||[])].forEach(j=>{
+      const g = +j.goles || 0;
+      if (g > max){ max = g; lista = [{nombre:j.nombre, numero:c.numero}]; }
+      else if (g === max && g > 0) lista.push({nombre:j.nombre, numero:c.numero});
+    });
+  });
+  return {max, lista};
+}
+
+function privadoResumen(){
+  const stats = jugadoresConPartidos();
+  if (stats.length === 0) return '<p class="muted">Todavía no hay datos suficientes para el resumen.</p>';
+
+  const maxPtos = Math.max(...stats.map(s=>s.ptos));
+  const lideres = stats.filter(s=>s.ptos===maxPtos);
+  const maxGf = Math.max(...stats.map(s=>s.gf));
+  const goleadores = stats.filter(s=>s.gf===maxGf);
+
+  const conMinPartidos = stats.filter(s=>s.pj>=MIN_PARTIDOS_PV_RESUMEN);
+  let mejorPV = [];
+  if (conMinPartidos.length){
+    const maxPV = Math.max(...conMinPartidos.map(s=>s.pv));
+    mejorPV = conMinPartidos.filter(s=>s.pv===maxPV);
+  }
+  const maxGxp = Math.max(...stats.map(s=>s.gxp));
+  const mejoresGxp = stats.filter(s=>s.gxp===maxGxp);
+
+  const suplentes = stats.filter(s=>esSustituto(s.nombre));
+  let mejorSuplente = [];
+  if (suplentes.length){
+    const maxPtosSup = Math.max(...suplentes.map(s=>s.ptos));
+    mejorSuplente = suplentes.filter(s=>s.ptos===maxPtosSup);
+  }
+
+  const ext = calcularExtremosPartidos();
+  const golIndiv = calcularMaxGolesIndividual();
+  const {juntos, contra} = calcularParejas();
+  const maxJuntos = maxDePareja(juntos);
+  const maxContra = maxDePareja(contra);
+
+  const listaNombres = (arr) => arr.map(s=>s.nombre).join(', ');
+  const listaPartidos = (arr) => arr.map(p=>`J.${p.numero} · ${fmtFecha(p.fecha,true)} (${p.m.golesBlanco}-${p.m.golesNegro})`).join(' · ');
+  const listaPares = (arr) => arr.length ? arr.map(p=>`${p[0]} & ${p[1]}`).join(' · ') : '-';
+
+  const fila = (titulo, valor, detalle) => `
+    <div class="card" style="margin-bottom:8px;">
+      <p class="muted" style="font-size:11px;margin:0 0 4px;">${titulo}</p>
+      <p style="font-weight:500;font-size:15px;margin:0;">${valor}</p>
+      ${detalle ? `<p class="secondary" style="font-size:12px;margin:4px 0 0;">${detalle}</p>` : ''}
+    </div>`;
+
+  let html = `<p class="muted" style="font-size:12px;margin:0 0 14px;">Solo visible para ti. Se actualiza solo según vas metiendo jornadas.</p>`;
+  html += fila('🏆 Líder de puntos', listaNombres(lideres), `${maxPtos} pts`);
+  html += fila('⚽ Máximo goleador', listaNombres(goleadores), `${maxGf} goles`);
+  html += fila(`📈 Mejor %V (mín. ${MIN_PARTIDOS_PV_RESUMEN} partidos)`, mejorPV.length?listaNombres(mejorPV):'-', mejorPV.length?`${dec2(mejorPV[0].pv)}%`:`Nadie llega aún a ${MIN_PARTIDOS_PV_RESUMEN} partidos`);
+  html += fila('🎯 Mejor GxP', listaNombres(mejoresGxp), dec2(maxGxp));
+  html += fila('🌟 Mejor suplente', mejorSuplente.length?listaNombres(mejorSuplente):'-', mejorSuplente.length?`${mejorSuplente[0].ptos} pts`:'Todavía no ha jugado ningún suplente');
+  html += fila('🔥 Partido con más goles', listaPartidos(ext.maxGolesInfo), `${ext.maxGoles} goles en total`);
+  html += fila('🧊 Partido con menos goles', listaPartidos(ext.minGolesInfo), `${ext.minGoles} goles en total`);
+  html += fila('📊 Partido con mayor diferencia', listaPartidos(ext.maxDifInfo), `${ext.maxDif} goles de diferencia`);
+  html += fila('👑 Más goles en un solo partido', golIndiv.lista.length?golIndiv.lista.map(x=>`${x.nombre} (J.${x.numero})`).join(' · '):'-', golIndiv.lista.length?`${golIndiv.max} goles`:'');
+  html += fila('🤝 Pareja que más ha coincidido', listaPares(maxJuntos.pares), maxJuntos.valor?`${maxJuntos.valor} veces juntos`:'');
+  html += fila('⚔️ Pareja que más se ha enfrentado', listaPares(maxContra.pares), maxContra.valor?`${maxContra.valor} veces rivales`:'');
+
+  return html;
+}
 
 function privadoExportar(){
   return `
