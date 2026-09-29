@@ -27,11 +27,14 @@ function renderInicio(){
             <p class="secondary" style="font-size:13px;margin:4px 0 0;">📍 Pabellón Cerrillo de Maracena · 20:00</p>
           </div>
         </div>
-        <div style="display:flex;gap:10px;">
+        <div id="ic-countdown-wrap" style="display:flex;gap:10px;">
           <div class="center"><p style="font-size:18px;font-weight:500;margin:0;" id="ic-d">-</p><p class="muted" style="font-size:9px;margin:0;">días</p></div>
           <div class="center"><p style="font-size:18px;font-weight:500;margin:0;" id="ic-h">-</p><p class="muted" style="font-size:9px;margin:0;">horas</p></div>
           <div class="center"><p style="font-size:18px;font-weight:500;margin:0;" id="ic-m">-</p><p class="muted" style="font-size:9px;margin:0;">min</p></div>
           <div class="center"><p style="font-size:18px;font-weight:500;margin:0;" id="ic-s">-</p><p class="muted" style="font-size:9px;margin:0;">seg</p></div>
+        </div>
+        <div id="ic-enjuego-wrap" style="display:none;">
+          <span class="tag tag-danger" style="font-size:13px;padding:6px 12px;">⚽ PARTIDO EN JUEGO</span>
         </div>
       </div>
     </div>`;
@@ -89,13 +92,17 @@ window.renderInicio = renderInicio;
 function calcularCuentaAtras(){
   const prox = proximaJornada();
   if (!prox) return null;
-  const objetivo = new Date(prox.fecha); objetivo.setHours(20,0,0,0);
-  const diff = Math.max(0, objetivo - new Date());
+  const ahora = new Date();
+  const inicio = new Date(prox.fecha); inicio.setHours(20,0,0,0);
+  const fin = new Date(prox.fecha); fin.setHours(21,30,0,0);
+  const enJuego = ahora >= inicio && ahora <= fin;
+  const diff = Math.max(0, inicio - ahora);
   return {
     d: Math.floor(diff/86400000),
     h: Math.floor((diff%86400000)/3600000),
     m: Math.floor((diff%3600000)/60000),
-    s: Math.floor((diff%60000)/1000)
+    s: Math.floor((diff%60000)/1000),
+    enJuego
   };
 }
 function actualizarCuentaAtras(prefix){
@@ -104,6 +111,14 @@ function actualizarCuentaAtras(prefix){
   if (!elD) return;
   const c = calcularCuentaAtras();
   if (!c) return;
+  if (prefix === 'ic'){
+    const wrapCountdown = document.getElementById('ic-countdown-wrap');
+    const wrapEnJuego = document.getElementById('ic-enjuego-wrap');
+    if (wrapCountdown && wrapEnJuego){
+      wrapCountdown.style.display = c.enJuego ? 'none' : 'flex';
+      wrapEnJuego.style.display = c.enJuego ? 'block' : 'none';
+    }
+  }
   document.getElementById(prefix+'-d').innerText = c.d;
   document.getElementById(prefix+'-h').innerText = String(c.h).padStart(2,'0');
   document.getElementById(prefix+'-m').innerText = String(c.m).padStart(2,'0');
@@ -478,14 +493,18 @@ function renderFicha(){
     <span class="tag tag-accent">${cat}</span>
   </div>`;
 
+  const jornadasJugadasPena = CALENDARIO.filter(c => window.JORNADAS_DB[c.numero] && window.JORNADAS_DB[c.numero].jugado).length;
+  const asistencia = jornadasJugadasPena ? (s.pj / jornadasJugadasPena * 100) : 0;
+
   html += `<div class="scrollx" style="margin-bottom:18px;">
-    <div class="grid-3" style="min-width:560px;">
+    <div class="grid-3" style="min-width:700px;">
       <div class="metric"><div class="v">${s.pj}</div><div class="l">PJ</div></div>
       <div class="metric"><div class="v">${dec2(s.pv)}%</div><div class="l">%V</div></div>
       <div class="metric"><div class="v">${s.pg}/${s.pe}/${s.pp}</div><div class="l">G/E/P</div></div>
       <div class="metric"><div class="v">${s.gf}</div><div class="l">Goles</div></div>
       <div class="metric"><div class="v">${s.autog}</div><div class="l">Autogoles</div></div>
       <div class="metric"><div class="v">${dec2(s.gxp)}</div><div class="l">GxP</div></div>
+      <div class="metric"><div class="v">${dec2(asistencia)}%</div><div class="l">Asistencia (${s.pj}/${jornadasJugadasPena})</div></div>
     </div>
   </div>`;
 
@@ -1027,6 +1046,14 @@ function generarSorteo(){
     else { (blanco.length<=negro.length?blanco:negro).push(n); }
   });
 
+  const mediaEquipo = (lista) => {
+    const st = lista.map(n=>statsJugador(n));
+    const pv = st.reduce((s,x)=>s+x.pv,0) / st.length;
+    const gxp = st.reduce((s,x)=>s+x.gxp,0) / st.length;
+    return {pv, gxp, esperados: gxp*5};
+  };
+  const mBlanco = mediaEquipo(blanco), mNegro = mediaEquipo(negro);
+
   document.getElementById('sorteo-resultado').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;">
       <div class="team-col"><p class="muted center" style="font-size:11px;">BLANCO</p>
@@ -1036,7 +1063,22 @@ function generarSorteo(){
       <div class="team-col"><p class="muted center" style="font-size:11px;">NEGRO</p>
         ${negro.map(n=>`<p style="margin:2px 0;">${n}${esSustituto(n)?' <span class="tag tag-muted">SUPL</span>':''}</p>`).join('')}
       </div>
-    </div>`;
+    </div>
+    <div class="grid-2" style="margin-top:14px;">
+      <div class="metric">
+        <div class="l" style="margin-bottom:4px;">BLANCO</div>
+        <div style="font-size:12px;">%V medio: <b>${dec2(mBlanco.pv)}%</b></div>
+        <div style="font-size:12px;">GxP medio: <b>${dec2(mBlanco.gxp)}</b></div>
+        <div style="font-size:12px;">Goles esperados: <b>${dec2(mBlanco.esperados)}</b></div>
+      </div>
+      <div class="metric">
+        <div class="l" style="margin-bottom:4px;">NEGRO</div>
+        <div style="font-size:12px;">%V medio: <b>${dec2(mNegro.pv)}%</b></div>
+        <div style="font-size:12px;">GxP medio: <b>${dec2(mNegro.gxp)}</b></div>
+        <div style="font-size:12px;">Goles esperados: <b>${dec2(mNegro.esperados)}</b></div>
+      </div>
+    </div>
+    <p class="muted" style="font-size:11px;margin:8px 0 0;">Suplentes convocados: ${suplentes.length} (${blanco.filter(esSustituto).length} en Blanco, ${negro.filter(esSustituto).length} en Negro)</p>`;
 }
 window.generarSorteo = generarSorteo;
 
