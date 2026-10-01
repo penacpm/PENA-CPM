@@ -432,13 +432,17 @@ function renderRachas(){
   html += `<div class="grid-2" style="margin-top:10px;">
     <div style="${estiloAmarillo}border-radius:12px;padding:0.9rem;">
       <p style="font-size:11px;margin:0 0 10px;">🤝 Más veces juntos</p>
-      ${maxJuntos.pares.length ? maxJuntos.pares.map(p=>`<p style="margin:2px 0;font-size:13px;">${p[0]} &amp; ${p[1]}</p>`).join('') : '<p style="margin:0;font-size:13px;">-</p>'}
-      <p style="font-size:22px;font-weight:500;margin:8px 0 0;">${maxJuntos.valor}</p>
+      <div class="row-between">
+        <div>${maxJuntos.pares.length ? maxJuntos.pares.map(p=>`<p style="margin:2px 0;font-size:13px;">${p[0]} &amp; ${p[1]}</p>`).join('') : '<p style="margin:0;font-size:13px;">-</p>'}</div>
+        <p style="font-size:24px;font-weight:500;margin:0;">${maxJuntos.valor}</p>
+      </div>
     </div>
     <div style="${estiloAmarillo}border-radius:12px;padding:0.9rem;">
       <p style="font-size:11px;margin:0 0 10px;">⚔️ Más enfrentamientos</p>
-      ${maxContra.pares.length ? maxContra.pares.map(p=>`<p style="margin:2px 0;font-size:13px;">${p[0]} &amp; ${p[1]}</p>`).join('') : '<p style="margin:0;font-size:13px;">-</p>'}
-      <p style="font-size:22px;font-weight:500;margin:8px 0 0;">${maxContra.valor}</p>
+      <div class="row-between">
+        <div>${maxContra.pares.length ? maxContra.pares.map(p=>`<p style="margin:2px 0;font-size:13px;">${p[0]} &amp; ${p[1]}</p>`).join('') : '<p style="margin:0;font-size:13px;">-</p>'}</div>
+        <p style="font-size:24px;font-weight:500;margin:0;">${maxContra.valor}</p>
+      </div>
     </div>
   </div>`;
 
@@ -497,14 +501,16 @@ function renderFicha(){
   const asistencia = jornadasJugadasPena ? (s.pj / jornadasJugadasPena * 100) : 0;
 
   html += `<div class="scrollx" style="margin-bottom:18px;">
-    <div class="grid-3" style="min-width:700px;">
+    <div class="grid-4" style="min-width:700px;margin-bottom:10px;">
       <div class="metric"><div class="v">${s.pj}</div><div class="l">PJ</div></div>
       <div class="metric"><div class="v">${dec2(s.pv)}%</div><div class="l">%V</div></div>
       <div class="metric"><div class="v">${s.pg}/${s.pe}/${s.pp}</div><div class="l">G/E/P</div></div>
+      <div class="metric"><div class="v">${dec2(asistencia)}%</div><div class="l">Asistencia (${s.pj}/${jornadasJugadasPena})</div></div>
+    </div>
+    <div class="grid-3" style="min-width:700px;">
       <div class="metric"><div class="v">${s.gf}</div><div class="l">Goles</div></div>
       <div class="metric"><div class="v">${s.autog}</div><div class="l">Autogoles</div></div>
       <div class="metric"><div class="v">${dec2(s.gxp)}</div><div class="l">GxP</div></div>
-      <div class="metric"><div class="v">${dec2(asistencia)}%</div><div class="l">Asistencia (${s.pj}/${jornadasJugadasPena})</div></div>
     </div>
   </div>`;
 
@@ -886,9 +892,23 @@ function renderModificarFormulario(){
       ${formularioEquipo('mod','negro','EQUIPO NEGRO', jd.negro)}
     </div>
     <button class="btn btn-primary" style="width:100%;margin-top:14px;" onclick="guardarResultado('mod', ${window.jornadaModSel})">Guardar cambios</button>
+    <button class="btn btn-danger" style="width:100%;margin-top:8px;" onclick="borrarJornada(${window.jornadaModSel})">🗑️ Borrar esta jornada</button>
     <p id="mod-resultado-msg" class="muted" style="font-size:12px;margin-top:8px;"></p>
   `;
 }
+async function borrarJornada(numero){
+  if (!confirm(`¿Seguro que quieres borrar por completo la Jornada ${numero}? Esto la deja como "sin jugar" y no se puede deshacer.`)) return;
+  const msg = document.getElementById('mod-resultado-msg');
+  try {
+    await window.dbBorrarJornada(numero);
+    window.jornadaModSel = null;
+    if (msg) msg.innerText = '✅ Jornada borrada.';
+    renderPrivado();
+  } catch (err) {
+    if (msg) msg.innerText = '❌ Error al borrar: ' + (err && err.message ? err.message : err);
+  }
+}
+window.borrarJornada = borrarJornada;
 
 function privadoContabilidad(){
   return `
@@ -1023,28 +1043,48 @@ function generarSorteo(){
   const criterio = document.getElementById('sorteo-criterio').value;
   window.sorteoCriterio = criterio;
 
-  const valor = (n)=>{
+  // Calculamos el valor de cada jugador UNA sola vez (importante para el criterio aleatorio,
+  // que si no se recalcularía en cada comparación y descuadraría el reparto).
+  const valores = {};
+  nombres.forEach(n=>{
     const s = statsJugador(n);
-    if (criterio==='pv') return s.pj?s.pv:50;
-    if (criterio==='ptos') return s.ptos;
-    if (criterio==='gxp') return s.gxp;
-    return Math.random();
-  };
+    if (criterio==='pv') valores[n] = s.pj?s.pv:50;
+    else if (criterio==='ptos') valores[n] = s.ptos;
+    else if (criterio==='gxp') valores[n] = s.gxp;
+    else valores[n] = Math.random();
+  });
+  const valor = (n) => valores[n];
+
   const suplentes = nombres.filter(n=>esSustituto(n));
   const originales = nombres.filter(n=>!esSustituto(n));
-  let ordenados = [...originales].sort((a,b)=>valor(b)-valor(a));
 
-  const blanco=[], negro=[];
-  let sumaBlanco=0, sumaNegro=0;
-  ordenados.forEach(n=>{
-    const v = valor(n);
-    if (sumaBlanco<=sumaNegro){ blanco.push(n); sumaBlanco+=v; } else { negro.push(n); sumaNegro+=v; }
-  });
-  // repartir suplentes: al menos 1 en cada equipo si hay más de uno
-  suplentes.forEach((n,i)=>{
-    if (suplentes.length>1){ (i%2===0?blanco:negro).push(n); }
-    else { (blanco.length<=negro.length?blanco:negro).push(n); }
-  });
+  // Reparte una lista de jugadores entre los dos equipos SIN superar nunca el cupo de cada uno,
+  // equilibrando por valor. Así los equipos siempre acaban en 5 y 5.
+  function repartirConCupo(lista, cupoBlanco, cupoNegro){
+    const ordenados = [...lista].sort((a,b)=>valor(b)-valor(a));
+    const blanco=[], negro=[]; let sumaBlanco=0, sumaNegro=0;
+    ordenados.forEach(n=>{
+      const v = valor(n);
+      const caboBlanco = blanco.length < cupoBlanco;
+      const caboNegro = negro.length < cupoNegro;
+      if (caboBlanco && (!caboNegro || sumaBlanco<=sumaNegro)){ blanco.push(n); sumaBlanco+=v; }
+      else if (caboNegro){ negro.push(n); sumaNegro+=v; }
+    });
+    return {blanco, negro};
+  }
+
+  // Repartimos primero los suplentes lo más equilibrado posible en número (ej. 2 y 2, o 2 y 1)...
+  const cupoSupBlanco = Math.ceil(suplentes.length/2);
+  const cupoSupNegro = suplentes.length - cupoSupBlanco;
+  const repSup = repartirConCupo(suplentes, cupoSupBlanco, cupoSupNegro);
+
+  // ...y los originales ocupan el resto de las 5 plazas de cada equipo.
+  const cupoOrigBlanco = 5 - cupoSupBlanco;
+  const cupoOrigNegro = 5 - cupoSupNegro;
+  const repOrig = repartirConCupo(originales, cupoOrigBlanco, cupoOrigNegro);
+
+  const blanco = [...repOrig.blanco, ...repSup.blanco];
+  const negro = [...repOrig.negro, ...repSup.negro];
 
   const mediaEquipo = (lista) => {
     const st = lista.map(n=>statsJugador(n));
@@ -1054,7 +1094,24 @@ function generarSorteo(){
   };
   const mBlanco = mediaEquipo(blanco), mNegro = mediaEquipo(negro);
 
+  // Probabilidad de victoria: combina %V medio y GxP medio de cada equipo (ambas siempre suman 100%)
+  const fuerza = (m) => Math.max(m.pv + m.gxp*20, 1); // mínimo 1 para evitar división por 0 si no hay datos
+  const fBlanco = fuerza(mBlanco), fNegro = fuerza(mNegro);
+  const probBlanco = fBlanco / (fBlanco + fNegro) * 100;
+  const probNegro = 100 - probBlanco;
+
   document.getElementById('sorteo-resultado').innerHTML = `
+    <div class="card" style="text-align:center;margin-bottom:14px;background:var(--surface-alt);">
+      <p class="muted" style="font-size:11px;margin:0 0 8px;">Probabilidad de victoria estimada</p>
+      <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin-bottom:8px;">
+        <div style="background:#b4b2a9;width:${probBlanco}%;"></div>
+        <div style="background:#2c2c2a;width:${probNegro}%;"></div>
+      </div>
+      <div class="row-between">
+        <span style="font-weight:500;">Blanco ${dec2(probBlanco)}%</span>
+        <span style="font-weight:500;">Negro ${dec2(probNegro)}%</span>
+      </div>
+    </div>
     <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;">
       <div class="team-col"><p class="muted center" style="font-size:11px;">BLANCO</p>
         ${blanco.map(n=>`<p style="margin:2px 0;">${n}${esSustituto(n)?' <span class="tag tag-muted">SUPL</span>':''}</p>`).join('')}
