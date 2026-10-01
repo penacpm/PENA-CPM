@@ -66,6 +66,9 @@ main{padding:16px 0;}
 .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
 @media(max-width:640px){.grid-3{grid-template-columns:1fr 1fr;}}
 @media(max-width:420px){.grid-3{grid-template-columns:1fr;}}
+.grid-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;}
+@media(max-width:640px){.grid-4{grid-template-columns:1fr 1fr;}}
+@media(max-width:420px){.grid-4{grid-template-columns:1fr;}}
 .row-between{display:flex;align-items:center;justify-content:space-between;}
 .muted{color:var(--text-muted);}
 .secondary{color:var(--text-secondary);}
@@ -240,6 +243,7 @@ window.dbRenombrarJugador = async (actual, nuevo, categoria) => {
   if (actual !== nuevo) await deleteDoc(doc(jugadoresCol, actual));
 };
 window.dbGuardarJornada = (numero, data) => setDoc(doc(jornadasCol, String(numero)), data);
+window.dbBorrarJornada = (numero) => deleteDoc(doc(jornadasCol, String(numero)));
 window.dbGuardarMovimientoContabilidad = (idExplicito, data) => {
   if (idExplicito) return setDoc(doc(contabilidadCol, idExplicito), data);
   return addDoc(contabilidadCol, data);
