@@ -244,6 +244,11 @@ window.dbRenombrarJugador = async (actual, nuevo, categoria) => {
 };
 window.dbGuardarJornada = (numero, data) => setDoc(doc(jornadasCol, String(numero)), data);
 window.dbBorrarJornada = (numero) => deleteDoc(doc(jornadasCol, String(numero)));
+window.dbPublicarEquipos = async (numero, blanco, negro) => {
+  const ref = doc(jornadasCol, String(numero));
+  const actual = (window.JORNADAS_DB && window.JORNADAS_DB[numero]) || {};
+  await setDoc(ref, {...actual, jugado: !!actual.jugado, convocados: {blanco, negro}});
+};
 window.dbGuardarMovimientoContabilidad = (idExplicito, data) => {
   if (idExplicito) return setDoc(doc(contabilidadCol, idExplicito), data);
   return addDoc(contabilidadCol, data);
